@@ -15,20 +15,18 @@ app = FastAPI()
 # Create a global client variable
 http_client = None
 
-@app.on_event("startup")
-async def startup_event():
+def get_client():
+    """Smart checker: Only opens a connection if one doesn't exist yet."""
     global http_client
-    # Opens ONE permanent connection when the bot boots up
-    http_client = httpx.AsyncClient(timeout=20.0)
-    print("🔥 Global HTTP Client started.")
+    if http_client is None or http_client.is_closed:
+        http_client = httpx.AsyncClient(timeout=20.0)
+    return http_client
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    global http_client
-    if http_client:
-        await http_client.aclose()
-        print("🛑 Global HTTP Client closed.")
-
+# Fixes the Render 405 Health Check Error
+@app.get("/")
+@app.head("/")
+async def index():
+    return {"status": "F0RB1D PROTOCOL ONLINE"}
 TOKEN = os.getenv("BOT_TOKEN")
 TELEGRAM_API = f"https://api.telegram.org/bot{TOKEN}"
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -37,26 +35,29 @@ USER_LAST_MSG_TIME = {}
 
 # --- ASYNC TELEGRAM DISPATCHER ---
 async def send_telegram(endpoint: str, payload: dict):
+    client = get_client() # <--- Triggers the smart checker
     try:
-        await http_client.post(f"{TELEGRAM_API}/{endpoint}", json=payload)
+        await client.post(f"{TELEGRAM_API}/{endpoint}", json=payload)
     except Exception as e:
         print(f"Telegram Error: {e}")
 
 # --- SAFE LONG MESSAGE & MARKDOWN DISPATCHER ---
 async def send_safe_ai_reply(chat_id: int, text: str):
+    client = get_client() # <--- Triggers the smart checker
+    
     # 1. Chunk text if it exceeds Telegram's 4096 limit
     max_len = 4000
     chunks = [text[i:i + max_len] for i in range(0, len(text), max_len)]
     
     for chunk in chunks:
         # Try sending with Markdown formatting first
-        res = await http_client.post(
+        res = await client.post(
             f"{TELEGRAM_API}/sendMessage",
             json={"chat_id": chat_id, "text": chunk, "parse_mode": "Markdown"}
         )
         # If Telegram rejects due to broken Markdown formatting, retry as raw text
         if res.status_code != 200:
-            await http_client.post(
+            await client.post(
                 f"{TELEGRAM_API}/sendMessage",
                 json={"chat_id": chat_id, "text": chunk}
             )
