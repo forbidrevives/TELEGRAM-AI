@@ -12,6 +12,23 @@ from fastapi.responses import Response
 
 app = FastAPI()
 
+# Create a global client variable
+http_client = None
+
+@app.on_event("startup")
+async def startup_event():
+    global http_client
+    # Opens ONE permanent connection when the bot boots up
+    http_client = httpx.AsyncClient(timeout=20.0)
+    print("🔥 Global HTTP Client started.")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    global http_client
+    if http_client:
+        await http_client.aclose()
+        print("🛑 Global HTTP Client closed.")
+
 TOKEN = os.getenv("BOT_TOKEN")
 TELEGRAM_API = f"https://api.telegram.org/bot{TOKEN}"
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -20,11 +37,10 @@ USER_LAST_MSG_TIME = {}
 
 # --- ASYNC TELEGRAM DISPATCHER ---
 async def send_telegram(endpoint: str, payload: dict):
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            await client.post(f"{TELEGRAM_API}/{endpoint}", json=payload)
-        except Exception as e:
-            print(f"Telegram Error: {e}")
+    try:
+        await http_client.post(f"{TELEGRAM_API}/{endpoint}", json=payload)
+    except Exception as e:
+        print(f"Telegram Error: {e}")
 
 # --- SAFE LONG MESSAGE & MARKDOWN DISPATCHER ---
 async def send_safe_ai_reply(chat_id: int, text: str):
@@ -34,17 +50,16 @@ async def send_safe_ai_reply(chat_id: int, text: str):
     
     for chunk in chunks:
         # Try sending with Markdown formatting first
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            res = await client.post(
+        res = await http_client.post(
+            f"{TELEGRAM_API}/sendMessage",
+            json={"chat_id": chat_id, "text": chunk, "parse_mode": "Markdown"}
+        )
+        # If Telegram rejects due to broken Markdown formatting, retry as raw text
+        if res.status_code != 200:
+            await http_client.post(
                 f"{TELEGRAM_API}/sendMessage",
-                json={"chat_id": chat_id, "text": chunk, "parse_mode": "Markdown"}
+                json={"chat_id": chat_id, "text": chunk}
             )
-            # If Telegram rejects due to broken Markdown formatting, retry as raw text
-            if res.status_code != 200:
-                await client.post(
-                    f"{TELEGRAM_API}/sendMessage",
-                    json={"chat_id": chat_id, "text": chunk}
-                )
 
 # --- AUTO-DELETE & LIVE COUNTDOWN HELPER (NON-BLOCKING) ---
 async def auto_delete_msg(chat_id: int, message_id: int, delay: int, prompt: str):
