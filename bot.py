@@ -172,26 +172,33 @@ async def process_task(update: dict):
                     data = {"model": ACTIVE_GROQ_MODEL, "messages": USER_MEMORY[chat_id]}
                     res = await client.post(groq_url, headers=headers, json=data)
                     
-                    # ATTEMPT 2: Self-Healing Trigger (Only runs if Groq deletes the current model)
-                    if res.status_code == 404:
+                    # ATTEMPT 2: Self-Healing Trigger (Catches 404 and 400 Dead Model Errors)
+                    if res.status_code in [404, 400] and "model" in res.text.lower():
                         models_res = await client.get("https://api.groq.com/openai/v1/models", headers=headers)
                         if models_res.status_code == 200:
-                            # Get all live models, filtering out 'whisper' (audio) models
                             live_models = [m["id"] for m in models_res.json()["data"] if "whisper" not in m["id"].lower()]
                             if live_models:
-                                ACTIVE_GROQ_MODEL = live_models[0]  # Cache the top available model
+                                ACTIVE_GROQ_MODEL = live_models[0]
                                 data["model"] = ACTIVE_GROQ_MODEL
-                                res = await client.post(groq_url, headers=headers, json=data)  # Instantly retry
+                                res = await client.post(groq_url, headers=headers, json=data)
                     
                     # 3. Process the Final Output
                     if res.status_code == 200:
                         ai_reply = res.json()["choices"][0]["message"]["content"]
                         USER_MEMORY[chat_id].append({"role": "assistant", "content": ai_reply})
                     else:
-                        ai_reply = f"⚠️ Forbid API Error Have Some Patience! {res.status_code}"
+                        # Extract the exact error from Groq so we know what's wrong
+                        error_detail = res.json().get("error", {}).get("message", "Unknown API Error")
+                        ai_reply = f"⚠️ Groq API Error ({res.status_code}):\n`{error_detail}`"
+                        
+                        # CRITICAL FIX: Remove the failed user message from memory so it doesn't corrupt future chats
+                        if len(USER_MEMORY[chat_id]) > 1:
+                            USER_MEMORY[chat_id].pop()
                         
                 except Exception as e:
                     ai_reply = f"⚠️ System Error: {str(e)}"
+                    if len(USER_MEMORY[chat_id]) > 1:
+                        USER_MEMORY[chat_id].pop()
                 
             await send_safe_ai_reply(chat_id, ai_reply)
 
@@ -461,26 +468,33 @@ async def process_task(update: dict):
                     data = {"model": ACTIVE_GROQ_MODEL, "messages": USER_MEMORY[chat_id]}
                     res = await client.post(groq_url, headers=headers, json=data)
                     
-                    # ATTEMPT 2: Self-Healing Trigger (Only runs if Groq deletes the current model)
-                    if res.status_code == 404:
+                    # ATTEMPT 2: Self-Healing Trigger (Catches 404 and 400 Dead Model Errors)
+                    if res.status_code in [404, 400] and "model" in res.text.lower():
                         models_res = await client.get("https://api.groq.com/openai/v1/models", headers=headers)
                         if models_res.status_code == 200:
-                            # Get all live models, filtering out 'whisper' (audio) models
                             live_models = [m["id"] for m in models_res.json()["data"] if "whisper" not in m["id"].lower()]
                             if live_models:
-                                ACTIVE_GROQ_MODEL = live_models[0]  # Cache the top available model
+                                ACTIVE_GROQ_MODEL = live_models[0]
                                 data["model"] = ACTIVE_GROQ_MODEL
-                                res = await client.post(groq_url, headers=headers, json=data)  # Instantly retry
+                                res = await client.post(groq_url, headers=headers, json=data)
                     
                     # 3. Process the Final Output
                     if res.status_code == 200:
                         ai_reply = res.json()["choices"][0]["message"]["content"]
                         USER_MEMORY[chat_id].append({"role": "assistant", "content": ai_reply})
                     else:
-                        ai_reply = f"⚠️ Forbid API Error Have Some Patience! {res.status_code}"
+                        # Extract the exact error from Groq so we know what's wrong
+                        error_detail = res.json().get("error", {}).get("message", "Unknown API Error")
+                        ai_reply = f"⚠️ Groq API Error ({res.status_code}):\n`{error_detail}`"
+                        
+                        # CRITICAL FIX: Remove the failed user message from memory so it doesn't corrupt future chats
+                        if len(USER_MEMORY[chat_id]) > 1:
+                            USER_MEMORY[chat_id].pop()
                         
                 except Exception as e:
                     ai_reply = f"⚠️ System Error: {str(e)}"
+                    if len(USER_MEMORY[chat_id]) > 1:
+                        USER_MEMORY[chat_id].pop()
                 
             await send_safe_ai_reply(chat_id, ai_reply)
 
