@@ -176,7 +176,7 @@ async def process_task(update: dict):
                     if res.status_code in [404, 400] and "model" in res.text.lower():
                         models_res = await client.get("https://api.groq.com/openai/v1/models", headers=headers)
                         if models_res.status_code == 200:
-                            live_models = [m["id"] for m in models_res.json()["data"] if "whisper" not in m["id"].lower()]
+                            live_models = [m["id"] for m in models_res.json()["data"] if "whisper" not in m["id"].lower() and "guard" not in m["id"].lower()]
                             if live_models:
                                 ACTIVE_GROQ_MODEL = live_models[0]
                                 data["model"] = ACTIVE_GROQ_MODEL
@@ -472,7 +472,7 @@ async def process_task(update: dict):
                     if res.status_code in [404, 400] and "model" in res.text.lower():
                         models_res = await client.get("https://api.groq.com/openai/v1/models", headers=headers)
                         if models_res.status_code == 200:
-                            live_models = [m["id"] for m in models_res.json()["data"] if "whisper" not in m["id"].lower()]
+                            live_models = [m["id"] for m in models_res.json()["data"] if "whisper" not in m["id"].lower() and "guard" not in m["id"].lower()]
                             if live_models:
                                 ACTIVE_GROQ_MODEL = live_models[0]
                                 data["model"] = ACTIVE_GROQ_MODEL
