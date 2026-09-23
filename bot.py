@@ -32,6 +32,7 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TOKEN}"
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 USER_MEMORY = {}
 USER_LAST_MSG_TIME = {}
+ACTIVE_GROQ_MODEL = "llama-3.3-70b-versatile"  # <--- Add this line
 
 # --- ASYNC TELEGRAM DISPATCHER ---
 async def send_telegram(endpoint: str, payload: dict):
@@ -159,18 +160,34 @@ async def process_task(update: dict):
             if len(USER_MEMORY[chat_id]) > 5:
                 USER_MEMORY[chat_id] = [USER_MEMORY[chat_id][0]] + USER_MEMORY[chat_id][-4:]
             
+            global ACTIVE_GROQ_MODEL
             groq_url = "https://api.groq.com/openai/v1/chat/completions"
             headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
-            data = {"model": "llama-3.1-8b-instant", "messages": USER_MEMORY[chat_id]}
             
             async with httpx.AsyncClient(timeout=20.0) as client:
                 try:
+                    # ATTEMPT 1: Fast Path (Zero Latency)
+                    data = {"model": ACTIVE_GROQ_MODEL, "messages": USER_MEMORY[chat_id]}
                     res = await client.post(groq_url, headers=headers, json=data)
+                    
+                    # ATTEMPT 2: Self-Healing Trigger (Only runs if Groq deletes the current model)
+                    if res.status_code == 404:
+                        models_res = await client.get("https://api.groq.com/openai/v1/models", headers=headers)
+                        if models_res.status_code == 200:
+                            # Get all live models, filtering out 'whisper' (audio) models
+                            live_models = [m["id"] for m in models_res.json()["data"] if "whisper" not in m["id"].lower()]
+                            if live_models:
+                                ACTIVE_GROQ_MODEL = live_models[0]  # Cache the top available model
+                                data["model"] = ACTIVE_GROQ_MODEL
+                                res = await client.post(groq_url, headers=headers, json=data)  # Instantly retry
+                    
+                    # 3. Process the Final Output
                     if res.status_code == 200:
                         ai_reply = res.json()["choices"][0]["message"]["content"]
                         USER_MEMORY[chat_id].append({"role": "assistant", "content": ai_reply})
                     else:
                         ai_reply = f"⚠️ Forbid API Error Have Some Patience! {res.status_code}"
+                        
                 except Exception as e:
                     ai_reply = f"⚠️ System Error: {str(e)}"
                 
@@ -432,18 +449,34 @@ async def process_task(update: dict):
             if len(USER_MEMORY[chat_id]) > 5:
                 USER_MEMORY[chat_id] = [USER_MEMORY[chat_id][0]] + USER_MEMORY[chat_id][-4:]
             
+            global ACTIVE_GROQ_MODEL
             groq_url = "https://api.groq.com/openai/v1/chat/completions"
             headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
-            data = {"model": "llama-3.1-8b-instant", "messages": USER_MEMORY[chat_id]}
             
             async with httpx.AsyncClient(timeout=20.0) as client:
                 try:
+                    # ATTEMPT 1: Fast Path (Zero Latency)
+                    data = {"model": ACTIVE_GROQ_MODEL, "messages": USER_MEMORY[chat_id]}
                     res = await client.post(groq_url, headers=headers, json=data)
+                    
+                    # ATTEMPT 2: Self-Healing Trigger (Only runs if Groq deletes the current model)
+                    if res.status_code == 404:
+                        models_res = await client.get("https://api.groq.com/openai/v1/models", headers=headers)
+                        if models_res.status_code == 200:
+                            # Get all live models, filtering out 'whisper' (audio) models
+                            live_models = [m["id"] for m in models_res.json()["data"] if "whisper" not in m["id"].lower()]
+                            if live_models:
+                                ACTIVE_GROQ_MODEL = live_models[0]  # Cache the top available model
+                                data["model"] = ACTIVE_GROQ_MODEL
+                                res = await client.post(groq_url, headers=headers, json=data)  # Instantly retry
+                    
+                    # 3. Process the Final Output
                     if res.status_code == 200:
                         ai_reply = res.json()["choices"][0]["message"]["content"]
                         USER_MEMORY[chat_id].append({"role": "assistant", "content": ai_reply})
                     else:
                         ai_reply = f"⚠️ Forbid API Error Have Some Patience! {res.status_code}"
+                        
                 except Exception as e:
                     ai_reply = f"⚠️ System Error: {str(e)}"
                 
