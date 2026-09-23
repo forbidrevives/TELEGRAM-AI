@@ -97,6 +97,8 @@ async def index():
 
 # --- THE BACKGROUND ENGINE ---
 async def process_task(update: dict):
+    global ACTIVE_GROQ_MODEL  # <--- ADD IT HERE
+    
     if "message" in update and "text" in update["message"]:
         chat_id = update["message"]["chat"]["id"]
         text = update["message"]["text"]
@@ -160,7 +162,7 @@ async def process_task(update: dict):
             if len(USER_MEMORY[chat_id]) > 5:
                 USER_MEMORY[chat_id] = [USER_MEMORY[chat_id][0]] + USER_MEMORY[chat_id][-4:]
             
-            global ACTIVE_GROQ_MODEL
+
             groq_url = "https://api.groq.com/openai/v1/chat/completions"
             headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
             
@@ -449,7 +451,7 @@ async def process_task(update: dict):
             if len(USER_MEMORY[chat_id]) > 5:
                 USER_MEMORY[chat_id] = [USER_MEMORY[chat_id][0]] + USER_MEMORY[chat_id][-4:]
             
-            global ACTIVE_GROQ_MODEL
+           
             groq_url = "https://api.groq.com/openai/v1/chat/completions"
             headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
             
